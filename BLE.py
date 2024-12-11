@@ -52,48 +52,26 @@ def whiten(bits, channel=38):
 
 
 def whiten_dynamic(bits, channel=38):
-    # This part of the code should be done using an LFSR Loop
-
-    # setup polynomial
     polynomial = 8 * [0]
 
-    #############################################################
-    #############################################################
-    #############################################################
-    #############################################################
-    exponents = []  # from core spec
-    #############################################################
-    #############################################################
-    #############################################################
-    #############################################################
+    # Volume 6, Part B, Section 3.1
+    exponents = [6, 3]  # Exponents for the polynomial x^7 + x^4 + 1
 
     for x in exponents:
         polynomial[x] = 1
-    working_poly = np.array(polynomial[:-1])
+    working_poly = np.array(polynomial[:-1])  # Exclude the x^0 term
 
-    # setup registers
-    channel_array = [int(x) for x in format(channel, "0>6b")]
-    state = np.array([1] + channel_array, dtype=int)  # from core spec
+    channel_array = [int(x) for x in format(channel, "06b")]
+    state = np.array([1] + channel_array, dtype=int)
     out_array = np.array([], dtype=int)
 
     # LFSR loop
-    for x in range(len(bits)):
-        #############################################################
-        #############################################################
-        #############################################################
-        #############################################################
-        # add bit to the output array
+    for _ in range(len(bits)):
+        out_bit = state[-1]
+        out_array = np.append(out_array, out_bit)
 
-        #############################################################
-        #############################################################
-        #############################################################
-        #############################################################
-
-        # add a 0 to the front of the state array
-        # this will be changed to a 1 if needed by the xor
         state = np.insert(state[:-1], 0, 0)
 
-        # feedback is done as a single xor step
         xor_array = out_bit * working_poly
         state = np.bitwise_xor(state, xor_array)
 
