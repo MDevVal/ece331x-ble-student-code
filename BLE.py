@@ -6,7 +6,6 @@ import BLE_Code_Lookup as lookup
 
 # -----------------------------------------------------------------------------------------
 
-
 # This code is meant to teach students the basics of Bluetooth Low Energy decoding using the Pluto SDR
 
 # Code created by: Galahad Wernsing
@@ -31,7 +30,8 @@ def get_bit_stream(data_stream, downsample_ratio=2):
         freq_data, name="Phase Difference of Entire Raw I/Q Capture", show_grid=True
     )
 
-    return np.greater(freq_data, 0)
+    # Return both the bit stream and the phase difference data
+    return np.greater(freq_data, 0), freq_data
 
 
 # -----------------------------------------------------------------------------------------
@@ -52,26 +52,53 @@ def whiten(bits, channel=38):
 
 
 def whiten_dynamic(bits, channel=38):
+    # This part of the code should be done using an LFSR Loop
+
+    # setup polynomial
     polynomial = 8 * [0]
 
+<<<<<<< HEAD
     # Volume 6, Part B, Section 3.1
-    exponents = [6, 3]  # Exponents for the polynomial x^7 + x^4 + 1
+    exponents = [0, 4, 7]  # Exponents for the polynomial x^7 + x^4 + 1
+=======
+    #############################################################
+    #############################################################
+    #############################################################
+    #############################################################
+    exponents = []  # from core spec
+    #############################################################
+    #############################################################
+    #############################################################
+    #############################################################
+>>>>>>> parent of 4f4e8a5 (Updated whiten_dynamic)
 
     for x in exponents:
         polynomial[x] = 1
-    working_poly = np.array(polynomial[:-1])  # Exclude the x^0 term
+    working_poly = np.array(polynomial[:-1])
 
-    channel_array = [int(x) for x in format(channel, "06b")]
-    state = np.array([1] + channel_array, dtype=int)
+    # setup registers
+    channel_array = [int(x) for x in format(channel, "0>6b")]
+    state = np.array([1] + channel_array, dtype=int)  # from core spec
     out_array = np.array([], dtype=int)
 
     # LFSR loop
-    for _ in range(len(bits)):
-        out_bit = state[-1]
-        out_array = np.append(out_array, out_bit)
+    for x in range(len(bits)):
+        #############################################################
+        #############################################################
+        #############################################################
+        #############################################################
+        # add bit to the output array
 
+        #############################################################
+        #############################################################
+        #############################################################
+        #############################################################
+
+        # add a 0 to the front of the state array
+        # this will be changed to a 1 if needed by the xor
         state = np.insert(state[:-1], 0, 0)
 
+        # feedback is done as a single xor step
         xor_array = out_bit * working_poly
         state = np.bitwise_xor(state, xor_array)
 
@@ -85,6 +112,7 @@ def get_CRC(bits):
     # my numpy array implementation was 10x slower, I don't know why
     # this may be easier to read than the whitening, input data is handled differently
 
+    # Volume 6, Part B, Section 3.2
     exponents = [
         0,
         1,
@@ -93,7 +121,7 @@ def get_CRC(bits):
         6,
         9,
         10,
-    ]  # from core spec, final tap is taken care of with new bit
+    ]
 
     # setup registers
     state = 6 * [1, 0, 1, 0]  # from core spec
@@ -193,7 +221,7 @@ def ad_packet_printer(decoded_packet, time):
 # -----------------------------------------------------------------------------------------
 
 
-def decode_ad_packet(packet_bits, channel=38):
+def decode_ad_packet(packet_bits, freq_data, channel=38):
     if len(packet_bits) < 300:
         return []  # not amazing but it doesn't crash
 
@@ -254,6 +282,24 @@ def decode_ad_packet(packet_bits, channel=38):
         # print("failed crc channel %s" % channel)
         pass
         # return [] # I can do a fail check in the printing function
+
+    frame_freq_data = freq_data[: len(packet_bits)]
+    ph.plotme(
+        frame_freq_data,
+        name=f"Phase Difference of BLE Frame on Channel {channel}",
+        show_grid=True,
+    )
+
+    preamble_length_bits = (
+        len(preamble_and_aa) - len("Advertising Address") * 8
+    )  # Adjust as needed
+    preamble_freq_data = frame_freq_data[: len(preamble_and_aa) - 48]
+    ph.plotme(
+        preamble_freq_data,
+        name=f"Phase Difference of Preamble in BLE Frame on Channel {channel}",
+        show_grid=True,
+    )
+
     return sections
 
 
@@ -261,12 +307,12 @@ def decode_ad_packet(packet_bits, channel=38):
 
 
 def fix_CRC(packet_bits, CRC):
-    test = packet_bits
+    test = packet_bits.copy()
     for i in range(len(packet_bits)):
         test[i] = test[i] ^ 1
         if get_CRC_alt(test) == CRC:
             return test
-        test = packet_bits
+        test = packet_bits.copy()
     return []
 
 
@@ -274,7 +320,7 @@ def fix_CRC(packet_bits, CRC):
 
 
 def decode_ad_channel(data, dwnsmpl=2, chan_num=38):
-    bits = get_bit_stream(data, downsample_ratio=dwnsmpl)
+    bits, freq_data = get_bit_stream(data, downsample_ratio=dwnsmpl)
 
     packet_start_locations = find_advertising_packets(bits)
 
@@ -284,7 +330,9 @@ def decode_ad_channel(data, dwnsmpl=2, chan_num=38):
         packet = bits[
             AA_start : AA_start + 300 * 8
         ]  # packet must be shorter than this, at least for pre-5.0 packets
-        packets = packets + [packet]
+        # Extract corresponding phase difference data for the packet
+        frame_freq_data = freq_data[AA_start : AA_start + 300 * 8]
+        packets = packets + [(packet, frame_freq_data)]
 
     processed_packets = process_ad_packet_chunks(packets, chan_num)
 
@@ -299,7 +347,8 @@ def process_ad_packet_chunks(chunks, channel):
         return 0
     found_packets = []
     for chunk in chunks:
-        out = decode_ad_packet(chunk, channel)
+        packet_bits, frame_freq_data = chunk  # Unpack the tuple
+        out = decode_ad_packet(packet_bits, frame_freq_data, channel)
         found_packets = found_packets + [out]
 
     return found_packets
@@ -382,3 +431,6 @@ def find_bit_pattern(data_stream, pattern):
             out_array *= ~check_array[i : i + out_len]
 
     return np.nonzero(out_array)[0]
+
+
+# -----------------------------------------------------------------------------------------
